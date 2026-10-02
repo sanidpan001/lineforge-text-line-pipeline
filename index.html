@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LineForge — Free Bulk Line Processor: Remove Duplicate Lines, Sort, Number & Add Prefix Online</title>
+<meta name="description" content="LineForge is a free online bulk line processor. Chain trim, dedupe, sort, prefix/suffix, line numbering, case changes, regex replace and line filters on thousands of text lines — instantly, in your browser.">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: { extend: {
+    colors: { forge: { bg:'#1C1F26', panel:'#242832', panel2:'#2B303D', orange:'#FF9F1C', teal:'#2EC4B6', rust:'#E07B00', steel:'#9AA3B2' } },
+    fontFamily: { mono:['ui-monospace','SFMono-Regular','Menlo','Consolas','monospace'] }
+  } }
+};
+</script>
+<style>
+  body { background:#1C1F26; color:#E8EAF0; }
+  .hero-grid {
+    background-image: radial-gradient(rgba(255,159,28,.06) 1px, transparent 1px);
+    background-size: 26px 26px;
+  }
+  /* ---- conveyor belt ---- */
+  .belt {
+    height: 46px;
+    background: #11141a;
+    border-top: 2px solid #3a4050; border-bottom: 2px solid #3a4050;
+    position: relative; overflow: hidden;
+  }
+  .belt::before {
+    content:''; position:absolute; inset:0;
+    background: repeating-linear-gradient(90deg, transparent 0 26px, rgba(255,159,28,.55) 26px 52px);
+    animation: beltmove 1.6s linear infinite;
+  }
+  .belt::after {
+    content:'CONVEYOR // LINEFORGE ASSEMBLY'; position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    font: 700 11px/1 ui-monospace, Menlo, monospace; letter-spacing:.35em; color:rgba(255,255,255,.28);
+  }
+  @keyframes beltmove { from { transform: translateX(0); } to { transform: translateX(52px); } }
+  /* ---- machine cards ---- */
+  .machine {
+    background: linear-gradient(180deg,#2B303D 0%,#242832 100%);
+    border:1px solid #3a4050; border-radius:14px; position:relative;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  }
+  .machine::before, .machine::after {
+    content:''; position:absolute; width:8px; height:8px; border-radius:9999px;
+    background:#565e72; top:10px; box-shadow: inset 0 1px 2px rgba(0,0,0,.6);
+  }
+  .machine::before { left:10px; } .machine::after { right:10px; }
+  .nameplate {
+    background: linear-gradient(180deg,#39404f,#2b303d);
+    border:1px solid #4a5468; border-radius:8px;
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  .preview-box {
+    font-family: ui-monospace, Menlo, monospace; font-size:11px; line-height:1.5;
+    background:#14171e; border:1px dashed #3f4657; border-radius:8px;
+    max-height:74px; overflow:hidden; white-space:pre-wrap; word-break:break-all; color:#9AA3B2;
+  }
+  .preset-btn { transition: transform .12s ease, box-shadow .12s ease; }
+  .preset-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(255,159,28,.25); }
+  .station-connector { min-width:34px; display:flex; align-items:center; justify-content:center; }
+  .stat-tile { background:#242832; border:1px solid #3a4050; border-radius:12px; }
+  textarea.code { font-family: ui-monospace, Menlo, monospace; }
+  .glow-orange { box-shadow: 0 0 0 3px rgba(255,159,28,.18); }
+  select, input[type=text], input[type=number] { color-scheme: dark; }
+  .faq-a { color:#C9CFDB; }
+  .no-scrollbar::-webkit-scrollbar { height:8px; }
+  .no-scrollbar::-webkit-scrollbar-thumb { background:#3a4050; border-radius:8px; }
+</style>
+</head>
+<body id="top" class="min-h-screen">
+
+<!-- ======================= HEADER ======================= -->
+<header class="sticky top-0 z-50 border-b border-[#3a4050] bg-[#1C1F26]/95 backdrop-blur">
+  <div class="mx-auto max-w-6xl px-4 sm:px-6 h-16 flex items-center justify-between">
+    <a href="#top" class="flex items-center gap-2.5">
+      <svg width="30" height="30" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <path d="M16 2c1 6-4 8-4 14a8 8 0 0 0 16 0c0-6-5-8-4-14-2 2-3 4-3 6-2-1-3-3-3-6-2 3-4 7-4 11a10 10 0 0 0 20 0c0-4-2-8-4-11 0 3-1 5-3 6 0-2-1-4-3-6z" fill="#FF9F1C"/>
+        <path d="M16 12c.6 3.6-2.4 4.8-2.4 8.4a4.8 4.8 0 0 0 9.6 0c0-3.6-3-4.8-2.4-8.4-1.2 1.2-1.8 2.4-1.8 3.6-1.2-.6-1.8-1.8-1.8-3.6z" fill="#2EC4B6"/>
+      </svg>
+      <span class="text-xl font-extrabold tracking-tight">Line<span class="text-[#FF9F1C]">Forge</span></span>
+    </a>
+    <nav class="flex items-center gap-5 text-sm font-medium">
+      <a href="#top" class="text-[#C9CFDB] hover:text-[#FF9F1C]">Home</a>
+      <a href="https://fixoraa.tech" class="text-[#C9CFDB] hover:text-[#FF9F1C]">More Tools</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ======================= HERO ======================= -->
+<section class="hero-grid border-b border-[#2b303d]">
+  <div class="mx-auto max-w-6xl px-4 sm:px-6 py-10 sm:py-14 text-center">
+    <span class="inline-flex items-center gap-2 rounded-full border border-[#FF9F1C]/50 bg-[#FF9F1C]/10 px-4 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-[#FF9F1C]">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#FF9F1C" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Unlimited Free Usage
+    </span>
+    <h1 class="mt-5 text-3xl sm:text-5xl font-extrabold tracking-tight leading-tight">
+      Bulk Line Pipeline <span class="text-[#FF9F1C]">Text Processor</span>
+    </h1>
+    <p class="mx-auto mt-4 max-w-2xl text-[#9AA3B2] text-sm sm:text-base">
+      Feed raw lines in one end — forged, numbered, deduped, prefixed lines come out the other.
+      Chain trim, dedupe, sort, prefix/suffix, numbering, case ops, regex replace and line filters
+      as reorderable machine stations on an assembly line. No signup. No watermark. Everything runs in your browser.
+    </p>
+  </div>
+</section>
+<!-- ======================= TOP AD ======================= -->
+<div class="no-print mx-auto max-w-6xl px-4 sm:px-6 pt-4" role="complementary" aria-label="Advertisement">
+  <div class="mx-auto text-center" style="max-width:728px">
+    <span class="block text-[10px] tracking-[0.18em] uppercase text-slate-400 mb-1.5">Advertisement</span>
+    <div class="flex justify-center overflow-hidden">
+      <div class="origin-top scale-[0.44] sm:scale-100 shrink-0">
+        <script>
+          atOptions = { 'key' : '4e68ac77881c17fe128a46565d9a4e8c', 'format' : 'iframe', 'height' : 90, 'width' : 728, 'params' : {} };
+        </script>
+        <script src="https://www.highrevenueformat.com/4e68ac77881c17fe128a46565d9a4e8c/invoke.js"></script>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================= TOOL ======================= -->
+<main class="mx-auto max-w-6xl px-4 sm:px-6 py-6">
+
+  <!-- Presets -->
+  <div class="rounded-2xl border border-[#3a4050] bg-[#242832] p-4 sm:p-5">
+    <div class="flex items-center justify-between flex-wrap gap-2">
+      <h2 class="text-sm font-bold uppercase tracking-[0.16em] text-[#FF9F1C]">One-click presets</h2>
+      <p class="text-xs text-[#9AA3B2]">Click a preset to load a ready-made pipeline onto the line.</p>
+    </div>
+    <div id="presetRow" class="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2"></div>
+  </div>
+
+  <!-- Input / Output -->
+  <div class="mt-5 grid gap-5 lg:grid-cols-2">
+    <div class="rounded-2xl border border-[#3a4050] bg-[#242832] p-4 sm:p-5">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-bold uppercase tracking-[0.16em] text-[#2EC4B6]">Raw material — input</h2>
+        <span id="inCount" class="text-xs font-mono text-[#9AA3B2]">0 lines</span>
+      </div>
+      <textarea id="inputBox" rows="10" spellcheck="false" placeholder="Paste your lines here, one per line…&#10;&#10;  apple&#10;banana&#10;apple&#10;  cherry  " class="code mt-3 w-full rounded-xl border border-[#3a4050] bg-[#14171e] p-3 text-sm text-[#E8EAF0] placeholder-[#565e72] focus:outline-none focus:border-[#FF9F1C]"></textarea>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button id="sampleBtn" class="rounded-lg border border-[#2EC4B6]/60 bg-[#2EC4B6]/10 px-3 py-1.5 text-xs font-bold text-[#2EC4B6] hover:bg-[#2EC4B6]/20">Load sample</button>
+        <button id="clearBtn" class="rounded-lg border border-[#3a4050] px-3 py-1.5 text-xs font-bold text-[#9AA3B2] hover:text-white">Clear</button>
+      </div>
+    </div>
+    <div class="rounded-2xl border border-[#3a4050] bg-[#242832] p-4 sm:p-5">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-bold uppercase tracking-[0.16em] text-[#FF9F1C]">Finished goods — output</h2>
+        <span id="outCount" class="text-xs font-mono text-[#9AA3B2]">0 lines</span>
+      </div>
+      <textarea id="outputBox" rows="10" spellcheck="false" readonly placeholder="Processed lines appear here…" class="code mt-3 w-full rounded-xl border border-[#FF9F1C]/40 bg-[#14171e] p-3 text-sm text-[#E8EAF0] placeholder-[#565e72] focus:outline-none"></textarea>
+      <div id="errorBox" class="mt-2 hidden rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-2 text-xs text-red-300"></div>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button id="copyBtn" class="rounded-lg bg-[#FF9F1C] px-4 py-1.5 text-xs font-extrabold text-[#1C1F26] hover:bg-[#ffb84d]">Copy output</button>
+        <button id="downloadBtn" class="rounded-lg border border-[#FF9F1C]/60 bg-[#FF9F1C]/10 px-4 py-1.5 text-xs font-bold text-[#FF9F1C] hover:bg-[#FF9F1C]/20">Download .txt</button>
+        <span id="copyMsg" class="self-center text-xs text-[#2EC4B6] opacity-0 transition-opacity">Copied!</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats bar -->
+  <div class="mt-5 grid grid-cols-3 sm:grid-cols-6 gap-2" id="statsBar">
+    <div class="stat-tile p-3 text-center"><div class="text-[10px] uppercase tracking-widest text-[#9AA3B2]">Lines in</div><div id="stLinesIn" class="mt-1 text-xl font-extrabold text-[#2EC4B6]">0</div></div>
+    <div class="stat-tile p-3 text-center"><div class="text-[10px] uppercase tracking-widest text-[#9AA3B2]">Lines out</div><div id="stLinesOut" class="mt-1 text-xl font-extrabold text-[#FF9F1C]">0</div></div>
+    <div class="stat-tile p-3 text-center"><div class="text-[10px] uppercase tracking-widest text-[#9AA3B2]">Duplicates removed</div><div id="stDupes" class="mt-1 text-xl font-extrabold">0</div></div>
+    <div class="stat-tile p-3 text-center"><div class="text-[10px] uppercase tracking-widest text-[#9AA3B2]">Lines filtered</div><div id="stFiltered" class="mt-1 text-xl font-extrabold">0</div></div>
+    <div class="stat-tile p-3 text-center"><div class="text-[10px] uppercase tracking-widest text-[#9AA3B2]">Chars in</div><div id="stCharsIn" class="mt-1 text-xl font-extrabold text-[#2EC4B6]">0</div></div>
+    <div class="stat-tile p-3 text-center"><div class="text-[10px] uppercase tracking-widest text-[#9AA3B2]">Chars out</div><div id="stCharsOut" class="mt-1 text-xl font-extrabold text-[#FF9F1C]">0</div></div>
+  </div>
+
+  <!-- Assembly line -->
+  <div class="mt-6 rounded-2xl border border-[#3a4050] bg-[#20242d] p-4 sm:p-5">
+    <div class="flex items-center justify-between flex-wrap gap-3">
+      <h2 class="text-sm font-bold uppercase tracking-[0.16em] text-[#FF9F1C]">Assembly line — your stations</h2>
+      <div class="flex items-center gap-2">
+        <select id="addStationSelect" class="rounded-lg border border-[#3a4050] bg-[#14171e] px-2 py-1.5 text-xs text-[#E8EAF0]"></select>
+        <button id="addStationBtn" class="rounded-lg bg-[#2EC4B6] px-3 py-1.5 text-xs font-extrabold text-[#1C1F26] hover:bg-[#4fd8c8]">+ Add station</button>
+      </div>
+    </div>
+    <p class="mt-1 text-xs text-[#9AA3B2]">Lines ride the belt left → right through each machine. Reorder stations with ◀ ▶, remove with ✕. Every station shows a live preview of the first lines passing through it.</p>
+    <div class="belt mt-4 rounded-lg"></div>
+    <div id="stationRow" class="no-scrollbar mt-1 flex gap-3 overflow-x-auto pb-3 pt-4 items-stretch"></div>
+    <div id="emptyLine" class="mt-2 rounded-xl border border-dashed border-[#3a4050] p-6 text-center text-sm text-[#9AA3B2]">
+      The line is empty — add a station above, or click a preset to get forging.
+    </div>
+  </div>
+
+  <!-- Saved pipelines -->
+  <div class="mt-5 rounded-2xl border border-[#3a4050] bg-[#242832] p-4 sm:p-5">
+    <h2 class="text-sm font-bold uppercase tracking-[0.16em] text-[#2EC4B6]">Saved pipelines</h2>
+    <div class="mt-3 flex flex-wrap items-center gap-2">
+      <input id="saveName" type="text" maxlength="40" placeholder="Name this pipeline…" class="w-48 rounded-lg border border-[#3a4050] bg-[#14171e] px-3 py-1.5 text-xs text-[#E8EAF0] placeholder-[#565e72] focus:outline-none focus:border-[#2EC4B6]">
+      <button id="saveBtn" class="rounded-lg border border-[#2EC4B6]/60 bg-[#2EC4B6]/10 px-3 py-1.5 text-xs font-bold text-[#2EC4B6] hover:bg-[#2EC4B6]/20">Save current</button>
+    </div>
+    <div id="savedList" class="mt-3 flex flex-wrap gap-2"></div>
+  </div>
+</main>
+
+<!-- ======================= BOTTOM AD ======================= -->
+<div class="no-print mx-auto max-w-6xl px-4 sm:px-6 pb-4" role="complementary" aria-label="Advertisement">
+  <div class="mx-auto text-center" style="max-width:728px">
+    <span class="block text-[10px] tracking-[0.18em] uppercase text-slate-400 mb-1.5">Advertisement</span>
+    <div class="flex justify-center overflow-hidden">
+      <script async src="https://js.wpadmngr.com/static/adManager.js" data-admpid="464498"></script>
+    </div>
+  </div>
+</div>
+<!-- ======================= SEO ARTICLE ======================= -->
+<article class="mx-auto max-w-6xl px-4 sm:px-6 pb-10 text-[#C9CFDB]">
+  <div class="rounded-2xl border border-[#3a4050] bg-[#242832] p-5 sm:p-8">
+    <h2 class="text-2xl sm:text-3xl font-extrabold text-white">Bulk Line Processing Online: The Complete Guide to Cleaning, Sorting, Numbering and Prefixing Text Lines</h2>
+
+    <p class="mt-4 text-sm sm:text-base leading-relaxed">Anyone who works with text long enough eventually hits the same wall: a raw list of lines that needs ten small fixes before it is usable. Maybe it is a keyword list with inconsistent spacing, a dump of emails with duplicates, product SKUs that need a prefix, or a SQL-ready list that must be quoted and comma-separated. Doing that by hand in a spreadsheet or a text editor is slow, error-prone, and mind-numbing. A <strong class="text-white">bulk line processor</strong> exists to turn that chore into a two-step job: paste the lines, configure an <strong class="text-white">operation pipeline</strong>, and copy the forged result.</p>
+
+    <p class="mt-4 text-sm sm:text-base leading-relaxed">LineForge approaches the problem the way a factory approaches production: as an assembly line. Your text lines ride a conveyor through a chain of machine stations, and each station performs exactly one operation — trim, dedupe, sort, prefix/suffix, number lines, change case, regex find/replace, keep or drop matching lines, escape quotes for CSV, or join everything into one line. Stations are reorderable, so the sequence itself is part of the design: trimming before deduping, for example, catches duplicates that only differ by stray spaces. Every station shows a live preview of the lines passing through it, so you can watch the text take shape station by station and catch mistakes before they reach the output.</p>
+
+    <h3 class="mt-8 text-xl font-bold text-white">1. Trim and drop empty lines: the foundation of every cleanup</h3>
+    <p class="mt-3 text-sm sm:text-base leading-relaxed">Whitespace is the invisible enemy of data work. Lines copied from PDFs, web pages, spreadsheets and chat logs carry trailing spaces, tabs and blank rows that break comparisons and look sloppy in documents. The <strong class="text-white">Trim</strong> station strips leading and trailing whitespace from every line without touching the text inside it, and the <strong class="text-white">Drop Empty</strong> station removes blank lines entirely. Run these two first in almost every pipeline — nearly every other operation works better on clean lines. A duplicate detector cannot match "apple" with "apple " unless the space is gone first, and a sort looks wrong when invisible characters shuffle the order. If your goal is simply to tidy a list, trim plus drop-empty is often the entire pipeline.</p>
+
+    <h3 class="mt-8 text-xl font-bold text-white">2. Remove duplicate lines without losing your mind</h3>
+    <p class="mt-3 text-sm sm:text-base leading-relaxed">Duplicate lines are the single most common defect in bulk lists: merged keyword research, scraped URLs, contact lists from two CRMs, or survey responses pasted twice. The <strong class="text-white">Dedupe</strong> station keeps the first occurrence of each line and discards the rest, and it reports exactly how many duplicates it removed in the stats bar so you can sanity-check the result. Two options matter in practice. Case-insensitive dedupe treats "Apple", "APPLE" and "apple" as the same line — usually what you want for keyword and email lists. Case-sensitive mode is stricter and preserves variants, which matters for passwords, tokens or code identifiers. The station also sweeps up any blank lines left behind, because an empty line counts as a duplicate of every other empty line. After dedupe, your line count tells a story: if ten thousand lines collapsed to six thousand, you now know how much of the source was noise.</p>
+
+    <h3 class="mt-8 text-xl font-bold text-white">3. Sort lines: A–Z, Z–A, by length, or numerically</h3>
+    <p class="mt-3 text-sm sm:text-base leading-relaxed">Sorting is how humans verify data. An alphabetized list lets you scan for near-duplicates your eyes would miss in random order, and it is the expected input for diff tools, merge workflows and printed references. LineForge sorts A–Z and Z–A with both case-sensitive and case-insensitive variants, because "Zebra" sorting before "apple" surprises people who expect dictionary order. Length sorting (shortest-first or longest-first) is a secret weapon for design and SEO: it reveals which headlines fit a character budget and which keywords are stubs. Numeric sorting handles lines that start with numbers correctly, unlike alphabetical sorting which puts "10" before "2". Reverse flips any order instantly, and shuffle randomizes a list for raffles, sampling or test data. Sort position in the pipeline changes semantics: sorting before adding a prefix orders by the raw content, while sorting after affixing orders by the decorated line — move the station and compare previews to pick the meaning you need.</p>
+
+    <h3 class="mt-8 text-xl font-bold text-white">4. Add a prefix to each line (and a suffix too)</h3>
+    <p class="mt-3 text-sm sm:text-base leading-relaxed">Adding a prefix to each line is one of the most searched text operations on the web, and for good reason: bulk prefixing is how plain lists become formatted output. Want every line to start with a bullet? Prefix "- ". Building an HTML list? Prefix "&lt;li&gt;" and suffix "&lt;/li&gt;". Wrapping values for a shell script? Prefix each with a quote. The <strong class="text-white">Prefix/Suffix</strong> station applies any text you type to the start and end of every line, and it accepts anything — symbols, brackets, words, emoji, or HTML tags. A popular trick is pairing it with the Join station: affix quotes to each line, then join with ", " to produce a quoted CSV row in one click. Another is affixing an opening parenthesis to a joined SQL list. Because prefixing happens per line, it composes with numbering (add "Step " as a prefix after numbering for "Step 1. …"), with case changes, and with regex edits. If you only need one operation, this station alone justifies the tool.</p>
+
+    <h3 class="mt-8 text-xl font-bold text-white">5. Number lines online: six formats, any starting number</h3>
+    <p class="mt-3 text-sm sm:text-base leading-relaxed">Numbering lines online is the fastest way to turn a brainstorm dump into an ordered list, a set of steps, or a numbered reference. LineForge offers six numbering styles: "1." for documents and markdown, "1)" for European-style lists, "[1]" for technical references, "(1)" for legal-style enumeration, "1 -" for casual lists, and zero-padded "001." for filenames and archives that must sort correctly in file explorers. You can start at any number, so continuing an existing list from 41 is trivial. Numbering composes beautifully with sorting: sort alphabetically first and the numbers reflect final rank order — perfect for leaderboards, reading lists and to-do queues. Number before deduping and every line is unique (numbers defeat dedupe); number after and the numbers land cleanly on final lines. The live preview under the station shows exactly how the first numbers will look, so pick the format with confidence.</p>
+
+    <h3 class="mt-8 text-xl font-bold text-white">6. Case operations: normalize shouting, whispering and Title Mishmash</h3>
+    <p class="mt-3 text-sm sm:text-base leading-relaxed">Lists arrive in every case imaginable: ALL CAPS exports from legacy systems, lowercase dumps from APIs, and Title Case From Spreadsheets Where Someone Got Creative. The <strong class="text-white">Case</strong> station normalizes whole lists in one pass: UPPERCASE for SKUs and codes, lowercase for emails and URLs, Title Case for names and headlines, Sentence case for prose, and an alternating case for playful text. Case normalization is not cosmetic — lowercase emails before deduping and you catch duplicates that differ only in capitalization; lowercase URLs before sorting and the order becomes predictable. Run case conversion early in the pipeline, right after trimming, and downstream stations inherit the consistency.</p>
+
+    <h3 class="mt-8 text-xl font-bold text-white">7. Regex find/replace per line: surgical edits at scale</h3>
+    <p class="mt-3 text-sm sm:text-base leading-relaxed">When prefixing is too blunt, regular expressions give you a scalpel. The <strong class="text-white">Regex Replace</strong> station runs a find-and-replace pattern on every line independently. Strip area codes from phone numbers, remove everything in parentheses, collapse multiple spaces, delete trailing punctuation, extract the domain from a list of URLs — if you can describe the pattern, regex can rewrite it across ten thousand lines at once. LineForge compiles your pattern safely: if the regex is invalid, the station reports a friendly error instead of crashing, and the rest of the pipeline keeps working on unchanged lines. A few patterns cover most real work: <code class="font-mono text-[#2EC4B6]">^\s+|\s+$</code> for extra trimming, <code class="font-mono text-[#2EC4B6]">\s{2,}</code> replaced with a single space to collapse gaps, <code class="font-mono text-[#2EC4B6]">[^a-zA-Z0-9 ]</code> to strip symbols, and <code class="font-mono text-[#2EC4B6]">^(https?://)?(www\.)?</code> to normalize URLs. Keep patterns simple, test on the live preview, and remember that regex runs per line — it cannot match across line boundaries, which is a feature, not a limitation: your lines stay independent.</p>
+
+    <h3 class="mt-8 text-xl font-bold text-white">8. Keep/drop line filters: slice lists by pattern</h3>
+    <p class="mt-3 text-sm sm:text-base leading-relaxed">The <strong class="text-white">Line Filter</strong> station is the assembly line's quality gate. Give it a pattern and choose <em>keep</em> to retain only matching lines, or <em>drop</em> to discard them. Keep lines containing "@" to isolate email-looking rows from a messy scrape. Drop lines matching "^#" to remove comments from a config dump. Keep "^https" to extract URLs, drop "test" to remove staging entries. The stats bar counts filtered lines, so you can verify the slice: if a drop filter removed zero lines, your pattern missed and you can adjust before copying. Filters compose with everything — filter first to reduce volume, or filter last to polish. Combined with regex, they handle nearly any extraction task: normalize with regex, then keep only what matches the final shape.</p>
+
+    <h3 class="mt-8 text-xl font-bold text-white">9. One-click presets: SQL IN-lists, HTML lists, quoted CSV, markdown bullets, numbered lists</h3>
+    <p class="mt-3 text-sm sm:text-base leading-relaxed">Most pipelines are not invented from scratch — they are the same five recipes everyone runs. LineForge ships them as presets. <strong class="text-white">SQL IN-list</strong> trims, dedupes, sorts and wraps lines into <code class="font-mono text-[#2EC4B6]">('apple', 'banana', 'cherry')</code>, ready to paste into a <code class="font-mono">WHERE column IN (...)</code> clause — a daily task for analysts. <strong class="text-white">HTML &lt;li&gt; list</strong> builds a complete <code class="font-mono text-[#2EC4B6]">&lt;ul&gt;</code> block from plain lines, which bloggers and documentation writers use constantly. <strong class="text-white">Quoted CSV</strong> escapes embedded quotes correctly (doubling them per CSV rules) and joins lines into one quoted, comma-separated row for spreadsheets. <strong class="text-white">Markdown bullets</strong> prefixes "- " for READMEs, wikis and notes apps. <strong class="text-white">Numbered</strong> produces a clean ordered list. Each preset simply loads its stations onto the line — you can then tweak, reorder or extend them, and save the result as your own named pipeline for next time.</p>
+
+    <h3 class="mt-8 text-xl font-bold text-white">10. Reading the stats bar: lines in/out, duplicates, characters</h3>
+    <p class="mt-3 text-sm sm:text-base leading-relaxed">Data work without measurement is guessing. The stats bar reports six numbers on every run: lines in and lines out (did the pipeline grow, shrink or hold steady?), duplicates removed (how much redundancy was in the source?), lines filtered (how aggressive were the keep/drop gates?), and characters in and out (useful for SMS budgets, tweet threads, meta descriptions and database column limits). Watch characters when affixing long prefixes to many lines — a 40-character wrapper on 10,000 lines adds 400,000 characters. Watch duplicates after merging two sources to quantify overlap. These numbers turn the tool from a text formatter into a lightweight data-auditing instrument, and they update live as you type or reorder stations.</p>
+
+    <h3 class="mt-8 text-xl font-bold text-white">11. Real-world recipes from the line</h3>
+    <p class="mt-3 text-sm sm:text-base leading-relaxed">A content marketer merges keyword lists from three tools: trim, dedupe case-insensitive, sort A–Z, lowercase — a clean master list in seconds. A developer prepares test emails: filter keep "@", regex-strip display names, lowercase, dedupe, join with "; " for the mail client's BCC field. A teacher randomizes quiz questions: drop empty, shuffle, number — a fresh order every class. An ops analyst builds a SQL filter from a ticket export: filter keep "^INC", dedupe, sort, SQL IN-list preset. A blogger converts reader suggestions into a post: drop empty, title case, sort, markdown bullets. A data engineer quotes identifiers: trim, escape quotes, prefix with a quote, join — CSV-safe output. Each recipe is three to six stations; each runs on thousands of lines faster than you can open a spreadsheet. Save the recipes you reuse as named pipelines — they persist in your browser via localStorage and reload exactly as you left them.</p>
+
+    <h3 class="mt-8 text-xl font-bold text-white">12. Privacy, limits and best practices</h3>
+    <p class="mt-3 text-sm sm:text-base leading-relaxed">Everything on this page runs locally in your browser: your lines are never uploaded, stored or seen by anyone, which makes LineForge safe for customer lists, internal identifiers and pre-release content. There is no signup, no usage cap and no watermark on the output. For very large inputs (hundreds of thousands of lines), keep the pipeline short and prefer a single pass — browsers handle tens of thousands of lines effortlessly, but regex stations on enormous texts deserve a moment. Order your stations deliberately: clean (trim, drop empty) → normalize (case, regex) → reduce (filter, dedupe) → order (sort) → decorate (affix, number, join). Save that pattern as a preset and most future jobs become one click. And when a preset is almost right, load it and adjust — presets are starting points, not cages.</p>
+
+    <!-- FAQs -->
+    <h2 class="mt-10 text-2xl font-extrabold text-white">Frequently asked questions</h2>
+    <div class="mt-4 space-y-4" id="faqList">
+      <div class="rounded-xl border border-[#3a4050] bg-[#1C1F26] p-4">
+        <h3 class="font-bold text-white">How do I add a prefix to each line of text online?</h3>
+        <p class="faq-a mt-2 text-sm leading-relaxed">Paste your lines into LineForge, add a Prefix/Suffix station, type your prefix (for example "- " or "&lt;li&gt;"), and every line instantly gets the prefix. Add a suffix in the same station if you need closing tags or quotes. Copy or download the result — no signup required.</p>
+      </div>
+      <div class="rounded-xl border border-[#3a4050] bg-[#1C1F26] p-4">
+        <h3 class="font-bold text-white">How can I number lines online in bulk?</h3>
+        <p class="faq-a mt-2 text-sm leading-relaxed">Add the Number station to your pipeline and choose from six formats: "1.", "1)", "[1]", "(1)", "1 -", or zero-padded "001.". Set any starting number. Combine it with the Sort station first if you want numbers to reflect alphabetical rank order.</p>
+      </div>
+      <div class="rounded-xl border border-[#3a4050] bg-[#1C1F26] p-4">
+        <h3 class="font-bold text-white">How do I remove duplicate lines from a list?</h3>
+        <p class="faq-a mt-2 text-sm leading-relaxed">Add the Dedupe station. It keeps the first occurrence of each line and removes the rest, showing the count in the stats bar. Use case-insensitive mode to also catch duplicates that differ only in capitalization, and trim lines first so "apple" and "apple " are recognized as duplicates.</p>
+      </div>
+      <div class="rounded-xl border border-[#3a4050] bg-[#1C1F26] p-4">
+        <h3 class="font-bold text-white">Can I build a SQL IN (...) list from my lines?</h3>
+        <p class="faq-a mt-2 text-sm leading-relaxed">Yes — click the "SQL IN-list" preset. It trims, dedupes, sorts and wraps your lines into ('a', 'b', 'c') format, ready to paste into a WHERE … IN clause. You can tweak the stations afterwards if you need double quotes or a different separator.</p>
+      </div>
+      <div class="rounded-xl border border-[#3a4050] bg-[#1C1F26] p-4">
+        <h3 class="font-bold text-white">What happens if my regex pattern is invalid?</h3>
+        <p class="faq-a mt-2 text-sm leading-relaxed">The Regex Replace and Line Filter stations validate your pattern safely. An invalid pattern shows a friendly error message and leaves your lines unchanged instead of breaking the page — fix the pattern and the pipeline updates live.</p>
+      </div>
+      <div class="rounded-xl border border-[#3a4050] bg-[#1C1F26] p-4">
+        <h3 class="font-bold text-white">Is my text uploaded anywhere? Is there a usage limit?</h3>
+        <p class="faq-a mt-2 text-sm leading-relaxed">No. All processing happens locally in your browser with JavaScript — your text never leaves your device. Usage is unlimited and free, with no signup, no paywall and no watermark on the output. Saved pipelines are stored only in your own browser.</p>
+      </div>
+    </div>
+  </div>
+</article>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    { "@type": "Question", "name": "How do I add a prefix to each line of text online?", "acceptedAnswer": { "@type": "Answer", "text": "Paste your lines into LineForge, add a Prefix/Suffix station, type your prefix (for example '- ' or a list tag), and every line instantly gets the prefix. Add a suffix in the same station for closing tags or quotes. Copy or download the result with no signup." } },
+    { "@type": "Question", "name": "How can I number lines online in bulk?", "acceptedAnswer": { "@type": "Answer", "text": "Add the Number station to your pipeline and choose from six formats: 1., 1), [1], (1), 1 -, or zero-padded 001. Set any starting number. Combine with the Sort station first if you want numbers to reflect alphabetical rank order." } },
+    { "@type": "Question", "name": "How do I remove duplicate lines from a list?", "acceptedAnswer": { "@type": "Answer", "text": "Add the Dedupe station. It keeps the first occurrence of each line and removes the rest, showing the count in the stats bar. Use case-insensitive mode to catch duplicates differing only in capitalization, and trim first so padded lines match." } },
+    { "@type": "Question", "name": "Can I build a SQL IN (...) list from my lines?", "acceptedAnswer": { "@type": "Answer", "text": "Yes — click the SQL IN-list preset. It trims, dedupes, sorts and wraps your lines into ('a', 'b', 'c') format, ready to paste into a WHERE IN clause. Tweak the stations afterwards for double quotes or different separators." } },
+    { "@type": "Question", "name": "What happens if my regex pattern is invalid?", "acceptedAnswer": { "@type": "Answer", "text": "The Regex Replace and Line Filter stations validate your pattern safely. An invalid pattern shows a friendly error and leaves lines unchanged instead of breaking the page; fix the pattern and the pipeline updates live." } },
+    { "@type": "Question", "name": "Is my text uploaded anywhere? Is there a usage limit?", "acceptedAnswer": { "@type": "Answer", "text": "No. All processing happens locally in your browser — your text never leaves your device. Usage is unlimited and free, with no signup, no paywall and no watermark. Saved pipelines are stored only in your own browser." } }
+  ]
+}
+</script>
+
+<!-- ======================= CORE LIB (inlined at build time) ======================= -->
+<script id="lineforge-text-line-pipeline-lib">
+/* LineForge core logic — PURE functions only. No DOM, no window, no localStorage. */
+
+function lfSplitLines(text) {
+  if (text === null || text === undefined) return [];
+  var t = String(text).replace(/\r\n?/g, '\n');
+  if (t === '') return [];
+  return t.split('\n');
+}
+
+function opTrim(lines) {
+  return lines.map(function (l) { return l.trim(); });
+}
+
+function opDropEmpty(lines) {
+  var out = [];
+  for (var i = 0; i < lines.length; i++) {
+    if (lines[i].trim() !== '') out.push(lines[i]);
+  }
+  return out;
+}
+
+/* Returns { lines, removed }. caseSensitive default false, dropEmpty default true */
+function opDedupe(lines, opts) {
+  var o = opts || {};
+  var cs = !!o.caseSensitive;
+  var de = o.dropEmpty === undefined ? true : !!o.dropEmpty;
+  var seen = {};
+  var out = [];
+  var removed = 0;
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i];
+    if (de && l.trim() === '') { removed++; continue; }
+    var key = cs ? l : l.toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(seen, key)) { removed++; continue; }
+    seen[key] = true;
+    out.push(l);
+  }
+  return { lines: out, removed: removed };
+}
+
+function opSort(lines, mode) {
+  var arr = lines.slice();
+  if (mode === 'az') arr.sort(function (a, b) { return a < b ? -1 : a > b ? 1 : 0; });
+  else if (mode === 'za') arr.sort(function (a, b) { return a > b ? -1 : a < b ? 1 : 0; });
+  else if (mode === 'az-ci') arr.sort(function (a, b) {
+    var x = a.toLowerCase(), y = b.toLowerCase();
+    return x < y ? -1 : x > y ? 1 : 0;
+  });
+  else if (mode === 'za-ci') arr.sort(function (a, b) {
+    var x = a.toLowerCase(), y = b.toLowerCase();
+    return x > y ? -1 : x < y ? 1 : 0;
+  });
+  else if (mode === 'len-asc') arr.sort(function (a, b) { return a.length - b.length; });
+  else if (mode === 'len-desc') arr.sort(function (a, b) { return b.length - a.length; });
+  else if (mode === 'num-asc') arr.sort(function (a, b) { return parseFloat(a) - parseFloat(b); });
+  else if (mode === 'num-desc') arr.sort(function (a, b) { return parseFloat(b) - parseFloat(a); });
+  else if (mode === 'reverse') arr.reverse();
+  else if (mode === 'shuffle') {
+    for (var i = arr.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+    }
+  }
+  return arr;
+}
+
+function opAffix(lines, pre, suf) {
+  var p = pre === undefined || pre === null ? '' : String(pre);
+  var s = suf === undefined || suf === null ? '' : String(suf);
+  return lines.map(function (l) { return p + l + s; });
+}
+
+function opNumber(lines, fmt, start) {
+  var st = start === undefined || start === null ? 1 : parseInt(start, 10);
+  if (isNaN(st)) st = 1;
+  var f = fmt || 'num-dot';
+  return lines.map(function (l, i) {
+    var n = st + i;
+    var ns = String(n);
+    if (f === 'num-pad3') {
+      ns = ns.length >= 3 ? ns : ('00' + ns).slice(-3);
+      return ns + '. ' + l;
+    }
+    if (f === 'num-paren') return ns + ') ' + l;
+    if (f === 'num-bracket') return '[' + ns + '] ' + l;
+    if (f === 'num-paren2') return '(' + ns + ') ' + l;
+    if (f === 'num-dash') return ns + ' - ' + l;
+    return ns + '. ' + l;
+  });
+}
+
+function opCase(lines, mode) {
+  return lines.map(function (l) {
+    if (mode === 'upper') return l.toUpperCase();
+    if (mode === 'lower') return l.toLowerCase();
+    if (mode === 'title') return l.replace(/[^\s]+/g, function (w) {
+      return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+    });
+    if (mode === 'sentence') return l.charAt(0).toUpperCase() + l.slice(1).toLowerCase();
+    if (mode === 'capitalize') return l.replace(/(^|\.\s+)([a-z])/g, function (m, a, c) { return a + c.toUpperCase(); });
+    if (mode === 'alternating') {
+      var out = '', up = false;
+      for (var i = 0; i < l.length; i++) {
+        var c = l.charAt(i);
+        if (/[a-zA-Z]/.test(c)) { out += up ? c.toUpperCase() : c.toLowerCase(); up = !up; }
+        else out += c;
+      }
+      return out;
+    }
+    return l;
+  });
+}
+
+/* Escape for CSV-style double-quoting: " -> "" */
+function opEscapeCsv(lines) {
+  return lines.map(function (l) { return l.replace(/"/g, '""'); });
+}
+
+function opJoin(lines, sep) {
+  return [lines.join(sep === undefined || sep === null ? ', ' : String(sep))];
+}
+
+/* Returns { lines, error } — error is null on success. Never throws on bad regex. */
+function opRegex(lines, pattern, replacement, flags) {
+  var res = { lines: lines.slice(), error: null };
+  try {
+    var rx = new RegExp(pattern === undefined || pattern === null ? '' : String(pattern), flags || 'g');
+    var repl = replacement === undefined || replacement === null ? '' : String(replacement);
+    res.lines = res.lines.map(function (l) { return l.replace(rx, repl); });
+  } catch (e) {
+    res.error = 'Invalid regular expression: ' + e.message;
+  }
+  return res;
+}
+
+/* mode: 'keep' | 'drop'. Returns { lines, error, removed }. */
+function opFilter(lines, pattern, mode) {
+  var res = { lines: [], error: null, removed: 0 };
+  try {
+    var rx = new RegExp(pattern === undefined || pattern === null ? '' : String(pattern), 'i');
+    var keep = mode !== 'drop';
+    for (var i = 0; i < lines.length; i++) {
+      var match = rx.test(lines[i]);
+      if (match === keep) res.lines.push(lines[i]);
+      else res.removed++;
+    }
+  } catch (e) {
+    res.error = 'Invalid regular expression: ' + e.message;
+    res.lines = lines.slice();
+  }
+  return res;
+}
+
+var LF_STATION_META = {
+  trim:    { name: 'Trim',        desc: 'Remove leading/trailing whitespace from every line' },
+  dropEmpty: { name: 'Drop Empty', desc: 'Remove blank lines' },
+  dedupe:  { name: 'Dedupe',      desc: 'Remove duplicate lines (counts how many)' },
+  sort:    { name: 'Sort',        desc: 'Order lines: A–Z, Z–A, by length, numeric…' },
+  affix:   { name: 'Prefix/Suffix', desc: 'Add text before and after each line' },
+  number:  { name: 'Number',      desc: 'Prefix each line with a running number' },
+  case:    { name: 'Case',        desc: 'UPPER / lower / Title / Sentence case' },
+  regex:   { name: 'Regex Replace', desc: 'Find & replace inside each line' },
+  filter:  { name: 'Line Filter', desc: 'Keep or drop lines matching a pattern' },
+  escape:  { name: 'CSV Escape',  desc: 'Double embedded quotes for CSV safety' },
+  join:    { name: 'Join',        desc: 'Merge all lines into one with a separator' }
+};
+
+/* step: { op: 'trim'|'dedupe'|'sort'|..., <params> }
+   Returns { lines, stats, previews, errors }.
+   previews: [{ op, lines(first 4) }] after each station.
+   errors: [{ op, message }]. */
+function runPipeline(text, steps) {
+  var stats = { linesIn: 0, charsIn: 0, linesOut: 0, charsOut: 0, duplicatesRemoved: 0, filteredRemoved: 0 };
+  var previews = [];
+  var errors = [];
+  var lines = lfSplitLines(text);
+  stats.linesIn = lines.length;
+  stats.charsIn = String(text === null || text === undefined ? '' : text).length;
+  steps = steps || [];
+  for (var i = 0; i < steps.length; i++) {
+    var st = steps[i] || {};
+    var op = st.op;
+    if (op === 'trim') lines = opTrim(lines);
+    else if (op === 'dropEmpty') lines = opDropEmpty(lines);
+    else if (op === 'dedupe') {
+      var d = opDedupe(lines, st);
+      lines = d.lines; stats.duplicatesRemoved += d.removed;
+    }
+    else if (op === 'sort') lines = opSort(lines, st.mode);
+    else if (op === 'affix') lines = opAffix(lines, st.pre, st.suf);
+    else if (op === 'number') lines = opNumber(lines, st.fmt, st.start);
+    else if (op === 'case') lines = opCase(lines, st.mode);
+    else if (op === 'regex') {
+      var r = opRegex(lines, st.pattern, st.replacement, st.flags);
+      lines = r.lines;
+      if (r.error) errors.push({ op: op, message: r.error });
+    }
+    else if (op === 'filter') {
+      var f = opFilter(lines, st.pattern, st.mode);
+      lines = f.lines; stats.filteredRemoved += f.removed;
+      if (f.error) errors.push({ op: op, message: f.error });
+    }
+    else if (op === 'escape') lines = opEscapeCsv(lines);
+    else if (op === 'join') lines = opJoin(lines, st.sep);
+    previews.push({ op: op, lines: lines.slice(0, 4) });
+  }
+  stats.linesOut = lines.length;
+  stats.charsOut = lines.join('\n').length;
+  return { lines: lines, stats: stats, previews: previews, errors: errors };
+}
+
+var LF_PRESETS = [
+  {
+    id: 'sql-in', name: 'SQL IN-list', desc: "('a', 'b', 'c') — paste straight into a query",
+    steps: [
+      { op: 'trim' }, { op: 'dedupe', caseSensitive: false, dropEmpty: true },
+      { op: 'sort', mode: 'az-ci' }, { op: 'affix', pre: "'", suf: "'" },
+      { op: 'join', sep: ', ' }, { op: 'affix', pre: '(', suf: ')' }
+    ]
+  },
+  {
+    id: 'html-li', name: 'HTML <li> list', desc: 'Bulleted list markup, ready to paste',
+    steps: [
+      { op: 'trim' }, { op: 'dropEmpty' }, { op: 'affix', pre: '<li>', suf: '</li>' },
+      { op: 'join', sep: '\n' }, { op: 'affix', pre: '<ul>\n', suf: '\n</ul>' }
+    ]
+  },
+  {
+    id: 'quoted-csv', name: 'Quoted CSV', desc: '"a", "b", "c" — spreadsheet-safe, one line',
+    steps: [
+      { op: 'trim' }, { op: 'dropEmpty' }, { op: 'escape' },
+      { op: 'affix', pre: '"', suf: '"' }, { op: 'join', sep: ', ' }
+    ]
+  },
+  {
+    id: 'md-bullets', name: 'Markdown bullets', desc: '- a\n- b\n- c — for READMEs and docs',
+    steps: [
+      { op: 'trim' }, { op: 'dropEmpty' }, { op: 'affix', pre: '- ', suf: '' }
+    ]
+  },
+  {
+    id: 'numbered', name: 'Numbered', desc: '1. a\n2. b\n3. c — ordered list of lines',
+    steps: [
+      { op: 'trim' }, { op: 'dropEmpty' }, { op: 'number', fmt: 'num-dot', start: 1 }
+    ]
+  }
+];
+
+function lfGetPreset(id) {
+  for (var i = 0; i < LF_PRESETS.length; i++) {
+    if (LF_PRESETS[i].id === id) return LF_PRESETS[i];
+  }
+  return null;
+}
+
+</script>
+
+<!-- ======================= UI WIRING ======================= -->
+<script>
+(function () {
+  'use strict';
+
+  var inputEl = document.getElementById('inputBox');
+  var outputEl = document.getElementById('outputBox');
+  var stationRow = document.getElementById('stationRow');
+  var emptyLine = document.getElementById('emptyLine');
+  var errorBox = document.getElementById('errorBox');
+  var steps = [];
+
+  var SORT_OPTIONS = [
+    ['az-ci', 'A → Z (case-insensitive)'], ['za-ci', 'Z → A (case-insensitive)'],
+    ['az', 'A → Z (case-sensitive)'], ['za', 'Z → A (case-sensitive)'],
+    ['len-asc', 'Shortest first'], ['len-desc', 'Longest first'],
+    ['num-asc', 'Numeric ↑'], ['num-desc', 'Numeric ↓'],
+    ['reverse', 'Reverse order'], ['shuffle', 'Shuffle (random)']
+  ];
+  var NUM_OPTIONS = [
+    ['num-dot', '1. line'], ['num-paren', '1) line'], ['num-bracket', '[1] line'],
+    ['num-paren2', '(1) line'], ['num-dash', '1 - line'], ['num-pad3', '001. line']
+  ];
+  var CASE_OPTIONS = [
+    ['upper', 'UPPERCASE'], ['lower', 'lowercase'], ['title', 'Title Case'],
+    ['sentence', 'Sentence case'], ['alternating', 'aLtErNaTiNg']
+  ];
+
+  function defaultStep(op) {
+    var s = { op: op };
+    if (op === 'dedupe') { s.caseSensitive = false; s.dropEmpty = true; }
+    else if (op === 'sort') s.mode = 'az-ci';
+    else if (op === 'affix') { s.pre = ''; s.suf = ''; }
+    else if (op === 'number') { s.fmt = 'num-dot'; s.start = 1; }
+    else if (op === 'case') s.mode = 'lower';
+    else if (op === 'regex') { s.pattern = ''; s.replacement = ''; s.flags = 'g'; }
+    else if (op === 'filter') { s.pattern = ''; s.mode = 'keep'; }
+    else if (op === 'join') s.sep = ', ';
+    return s;
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function buildAddSelect() {
+    var sel = document.getElementById('addStationSelect');
+    var order = ['trim', 'dropEmpty', 'dedupe', 'sort', 'affix', 'number', 'case', 'regex', 'filter', 'escape', 'join'];
+    sel.innerHTML = '';
+    order.forEach(function (op) {
+      var o = document.createElement('option');
+      o.value = op; o.textContent = LF_STATION_META[op].name;
+      sel.appendChild(o);
+    });
+  }
+
+  function paramControls(step, idx) {
+    var op = step.op, html = '';
+    if (op === 'dedupe') {
+      html = '<label class="flex items-center gap-2 text-xs text-[#C9CFDB]"><input type="checkbox" data-p="caseSensitive" ' + (step.caseSensitive ? 'checked' : '') + '> Case-sensitive</label>' +
+             '<label class="flex items-center gap-2 text-xs text-[#C9CFDB]"><input type="checkbox" data-p="dropEmpty" ' + (step.dropEmpty ? 'checked' : '') + '> Remove blank lines too</label>';
+    } else if (op === 'sort') {
+      html = '<select data-p="mode" class="w-full rounded-lg border border-[#3a4050] bg-[#14171e] px-2 py-1.5 text-xs">' +
+        SORT_OPTIONS.map(function (o) { return '<option value="' + o[0] + '"' + (step.mode === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>';
+    } else if (op === 'affix') {
+      html = '<input type="text" data-p="pre" value="' + escHtml(step.pre) + '" placeholder="Prefix, e.g. - " class="w-full rounded-lg border border-[#3a4050] bg-[#14171e] px-2 py-1.5 text-xs placeholder-[#565e72]">' +
+             '<input type="text" data-p="suf" value="' + escHtml(step.suf) + '" placeholder="Suffix, e.g. ," class="w-full rounded-lg border border-[#3a4050] bg-[#14171e] px-2 py-1.5 text-xs placeholder-[#565e72]">';
+    } else if (op === 'number') {
+      html = '<select data-p="fmt" class="w-full rounded-lg border border-[#3a4050] bg-[#14171e] px-2 py-1.5 text-xs">' +
+        NUM_OPTIONS.map(function (o) { return '<option value="' + o[0] + '"' + (step.fmt === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
+        '<label class="flex items-center gap-2 text-xs text-[#C9CFDB]">Start at <input type="number" data-p="start" value="' + step.start + '" class="w-16 rounded-lg border border-[#3a4050] bg-[#14171e] px-2 py-1 text-xs"></label>';
+    } else if (op === 'case') {
+      html = '<select data-p="mode" class="w-full rounded-lg border border-[#3a4050] bg-[#14171e] px-2 py-1.5 text-xs">' +
+        CASE_OPTIONS.map(function (o) { return '<option value="' + o[0] + '"' + (step.mode === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>';
+    } else if (op === 'regex') {
+      html = '<input type="text" data-p="pattern" value="' + escHtml(step.pattern) + '" placeholder="Find pattern (regex)" class="w-full rounded-lg border border-[#3a4050] bg-[#14171e] px-2 py-1.5 text-xs font-mono placeholder-[#565e72]">' +
+             '<input type="text" data-p="replacement" value="' + escHtml(step.replacement) + '" placeholder="Replace with" class="w-full rounded-lg border border-[#3a4050] bg-[#14171e] px-2 py-1.5 text-xs font-mono placeholder-[#565e72]">';
+    } else if (op === 'filter') {
+      html = '<div class="flex gap-1.5"><select data-p="mode" class="rounded-lg border border-[#3a4050] bg-[#14171e] px-2 py-1.5 text-xs">' +
+        '<option value="keep"' + (step.mode === 'keep' ? ' selected' : '') + '>Keep matching</option>' +
+        '<option value="drop"' + (step.mode === 'drop' ? ' selected' : '') + '>Drop matching</option></select>' +
+        '<input type="text" data-p="pattern" value="' + escHtml(step.pattern) + '" placeholder="Pattern (regex)" class="flex-1 rounded-lg border border-[#3a4050] bg-[#14171e] px-2 py-1.5 text-xs font-mono placeholder-[#565e72]"></div>';
+    } else if (op === 'join') {
+      html = '<input type="text" data-p="sep" value="' + escHtml(step.sep) + '" placeholder="Separator" class="w-full rounded-lg border border-[#3a4050] bg-[#14171e] px-2 py-1.5 text-xs font-mono placeholder-[#565e72]">';
+    } else {
+      html = '<p class="text-[11px] text-[#9AA3B2]">' + escHtml(LF_STATION_META[op].desc) + '</p>';
+    }
+    return html;
+  }
+
+  function renderStations(previews) {
+    stationRow.innerHTML = '';
+    emptyLine.style.display = steps.length ? 'none' : 'block';
+    steps.forEach(function (step, idx) {
+      var meta = LF_STATION_META[step.op];
+      var card = document.createElement('div');
+      card.className = 'machine shrink-0 w-64 p-3 pt-4 flex flex-col gap-2';
+      var num = ('0' + (idx + 1)).slice(-2);
+      card.innerHTML =
+        '<div class="nameplate flex items-center justify-between px-2.5 py-1.5">' +
+          '<span class="text-[11px] font-extrabold tracking-widest text-[#FF9F1C]">ST-' + num + ' · ' + escHtml(meta.name.toUpperCase()) + '</span>' +
+          '<button data-act="remove" title="Remove station" class="text-[#9AA3B2] hover:text-red-400 font-bold">✕</button>' +
+        '</div>' +
+        '<div class="flex flex-col gap-1.5">' + paramControls(step, idx) + '</div>' +
+        '<div class="flex items-center gap-1.5">' +
+          '<button data-act="left" title="Move earlier" class="flex-1 rounded-md border border-[#3a4050] py-1 text-xs font-bold text-[#9AA3B2] hover:text-white hover:border-[#FF9F1C]"' + (idx === 0 ? ' disabled style="opacity:.3"' : '') + '>◀</button>' +
+          '<button data-act="right" title="Move later" class="flex-1 rounded-md border border-[#3a4050] py-1 text-xs font-bold text-[#9AA3B2] hover:text-white hover:border-[#FF9F1C]"' + (idx === steps.length - 1 ? ' disabled style="opacity:.3"' : '') + '>▶</button>' +
+        '</div>' +
+        '<div><div class="mb-1 text-[10px] uppercase tracking-widest text-[#2EC4B6]">Live preview</div><div class="preview-box p-2" data-preview></div></div>';
+
+      card.addEventListener('click', function (e) {
+        var act = e.target.getAttribute && e.target.getAttribute('data-act');
+        if (!act) return;
+        if (act === 'remove') { steps.splice(idx, 1); }
+        else if (act === 'left' && idx > 0) { var t = steps[idx - 1]; steps[idx - 1] = steps[idx]; steps[idx] = t; }
+        else if (act === 'right' && idx < steps.length - 1) { var u = steps[idx + 1]; steps[idx + 1] = steps[idx]; steps[idx] = u; }
+        renderStations(); refresh();
+      });
+      card.addEventListener('input', function (e) {
+        var p = e.target.getAttribute && e.target.getAttribute('data-p');
+        if (!p) return;
+        if (e.target.type === 'checkbox') step[p] = e.target.checked;
+        else if (e.target.type === 'number') step[p] = parseInt(e.target.value, 10) || 0;
+        else step[p] = e.target.value;
+        refresh();
+      });
+      card.addEventListener('change', function (e) {
+        var p = e.target.getAttribute && e.target.getAttribute('data-p');
+        if (!p) return;
+        if (e.target.type === 'checkbox') step[p] = e.target.checked;
+        else step[p] = e.target.value;
+        refresh();
+      });
+
+      var pv = previews && previews[idx] ? previews[idx].lines : [];
+      var pvEl = card.querySelector('[data-preview]');
+      pvEl.textContent = pv.length ? pv.slice(0, 3).join('\n') + (pv.length > 3 || (previews && previews[idx] && previews[idx].more) ? '\n…' : '') : '(no lines yet)';
+
+      stationRow.appendChild(card);
+      if (idx < steps.length - 1) {
+        var conn = document.createElement('div');
+        conn.className = 'station-connector shrink-0 self-center text-[#FF9F1C] text-2xl font-black';
+        conn.textContent = '➜';
+        stationRow.appendChild(conn);
+      }
+    });
+  }
+
+  function refresh() {
+    var res = runPipeline(inputEl.value, steps);
+    outputEl.value = res.lines.join('\n');
+    document.getElementById('inCount').textContent = res.stats.linesIn + ' lines';
+    document.getElementById('outCount').textContent = res.stats.linesOut + ' lines';
+    document.getElementById('stLinesIn').textContent = res.stats.linesIn;
+    document.getElementById('stLinesOut').textContent = res.stats.linesOut;
+    document.getElementById('stDupes').textContent = res.stats.duplicatesRemoved;
+    document.getElementById('stFiltered').textContent = res.stats.filteredRemoved;
+    document.getElementById('stCharsIn').textContent = res.stats.charsIn.toLocaleString('en-US');
+    document.getElementById('stCharsOut').textContent = res.stats.charsOut.toLocaleString('en-US');
+    if (res.errors.length) {
+      errorBox.classList.remove('hidden');
+      errorBox.textContent = res.errors.map(function (e) { return e.message; }).join(' ');
+    } else {
+      errorBox.classList.add('hidden');
+      errorBox.textContent = '';
+    }
+    // update previews
+    var pvEls = stationRow.querySelectorAll('[data-preview]');
+    for (var i = 0; i < pvEls.length && i < res.previews.length; i++) {
+      var pl = res.previews[i].lines;
+      pvEls[i].textContent = pl.length ? pl.slice(0, 3).join('\n') + (res.lines.length > 3 ? '' : '') : '(no lines yet)';
+      if (pl.length > 3) pvEls[i].textContent += '\n…';
+    }
+  }
+
+  var debounce = null;
+  inputEl.addEventListener('input', function () {
+    clearTimeout(debounce);
+    debounce = setTimeout(refresh, 120);
+  });
+
+  document.getElementById('addStationBtn').addEventListener('click', function () {
+    steps.push(defaultStep(document.getElementById('addStationSelect').value));
+    renderStations(); refresh();
+  });
+
+  // presets
+  var presetRow = document.getElementById('presetRow');
+  LF_PRESETS.forEach(function (p) {
+    var b = document.createElement('button');
+    b.className = 'preset-btn rounded-xl border border-[#FF9F1C]/40 bg-[#FF9F1C]/5 p-3 text-left';
+    b.innerHTML = '<div class="text-sm font-extrabold text-[#FF9F1C]">' + escHtml(p.name) + '</div>' +
+                  '<div class="mt-1 text-[11px] leading-snug text-[#9AA3B2]">' + escHtml(p.desc) + '</div>';
+    b.addEventListener('click', function () {
+      steps = JSON.parse(JSON.stringify(p.steps));
+      renderStations(); refresh();
+      document.getElementById('stationRow').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+    presetRow.appendChild(b);
+  });
+
+  document.getElementById('sampleBtn').addEventListener('click', function () {
+    inputEl.value = '  apple\nBanana\napple\n  cherry  \n\nBANANA\ndate\ncherry\nElderberry\nfig\napple';
+    refresh();
+  });
+  document.getElementById('clearBtn').addEventListener('click', function () {
+    inputEl.value = ''; refresh();
+  });
+  document.getElementById('copyBtn').addEventListener('click', function () {
+    var msg = document.getElementById('copyMsg');
+    function done() { msg.style.opacity = '1'; setTimeout(function () { msg.style.opacity = '0'; }, 1500); }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(outputEl.value).then(done, function () { outputEl.select(); document.execCommand('copy'); done(); });
+    } else { outputEl.select(); document.execCommand('copy'); done(); }
+  });
+  document.getElementById('downloadBtn').addEventListener('click', function () {
+    var blob = new Blob([outputEl.value], { type: 'text/plain;charset=utf-8' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'lineforge-output.txt';
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  });
+
+  // saved pipelines (localStorage — UI only)
+  var LS_KEY = 'lineforge-pipelines-v1';
+  function getSaved() {
+    try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); }
+    catch (e) { return []; }
+  }
+  function setSaved(list) {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(list)); } catch (e) {}
+  }
+  function renderSaved() {
+    var list = getSaved();
+    var box = document.getElementById('savedList');
+    box.innerHTML = '';
+    if (!list.length) {
+      box.innerHTML = '<p class="text-xs text-[#565e72]">No saved pipelines yet — build one on the line and save it.</p>';
+      return;
+    }
+    list.forEach(function (item, i) {
+      var wrap = document.createElement('div');
+      wrap.className = 'flex items-center gap-1 rounded-lg border border-[#3a4050] bg-[#14171e] px-2 py-1';
+      var load = document.createElement('button');
+      load.className = 'text-xs font-bold text-[#2EC4B6] hover:underline';
+      load.textContent = item.name + ' (' + item.steps.length + ')';
+      load.addEventListener('click', function () { steps = JSON.parse(JSON.stringify(item.steps)); renderStations(); refresh(); });
+      var del = document.createElement('button');
+      del.className = 'text-xs text-[#9AA3B2] hover:text-red-400 font-bold px-1';
+      del.textContent = '✕';
+      del.title = 'Delete';
+      del.addEventListener('click', function () {
+        var l = getSaved(); l.splice(i, 1); setSaved(l); renderSaved();
+      });
+      wrap.appendChild(load); wrap.appendChild(del);
+      box.appendChild(wrap);
+    });
+  }
+  document.getElementById('saveBtn').addEventListener('click', function () {
+    var nameEl = document.getElementById('saveName');
+    var name = nameEl.value.trim();
+    if (!name) { nameEl.focus(); nameEl.classList.add('glow-orange'); setTimeout(function(){nameEl.classList.remove('glow-orange');}, 1200); return; }
+    if (!steps.length) { nameEl.value = ''; nameEl.placeholder = 'Add stations first…'; return; }
+    var list = getSaved();
+    list.push({ name: name, steps: JSON.parse(JSON.stringify(steps)) });
+    setSaved(list); renderSaved();
+    nameEl.value = ''; nameEl.placeholder = 'Name this pipeline…';
+  });
+
+  buildAddSelect();
+  renderStations();
+  renderSaved();
+  refresh();
+})();
+</script>
+
+<footer class="border-t border-[#2b303d] py-6">
+  <div class="mx-auto max-w-6xl px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#565e72]">
+    <span>© 2026 LineForge — free bulk line processor. All processing happens in your browser.</span>
+    <span class="flex gap-4"><a href="#top" class="hover:text-[#FF9F1C]">Home</a><a href="https://fixoraa.tech" class="hover:text-[#FF9F1C]">More Tools</a></span>
+  </div>
+</footer>
+</body>
+</html>
